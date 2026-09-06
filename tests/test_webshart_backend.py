@@ -493,7 +493,17 @@ class TestWebshartCaptionKeyIntegration(unittest.TestCase):
                 self.assertEqual(backend.get_caption(self._sample_id(backend)), expected)
 
     def test_selects_indexed_fields_and_literal_key_names(self):
-        self.files["sample.jpg"].update({"custom.key": "literal key caption", "short": "indexed caption"})
+        self.json_metadata.pop("captions")
+        self.json_metadata.update({"custom.key": "literal key caption", "custom": {"key": "nested caption"}})
+        self.files["sample.jpg"]["captions"] = "indexed caption"
+        self._write_index(embedded=True)
+        backend = self._backend(["custom.key", "captions", "short"])
+        self.assertEqual(
+            backend.get_caption(self._sample_id(backend)), ["literal key caption", "indexed caption", "brief caption"]
+        )
+
+    def test_selects_literal_keys_in_json_caption_dictionary(self):
+        self.json_metadata["captions"] = {"custom.key": "literal key caption", "short": "shadowed caption"}
         self._write_index(embedded=True)
         backend = self._backend(["custom.key", "short"])
         self.assertEqual(backend.get_caption(self._sample_id(backend)), ["literal key caption", "brief caption"])
