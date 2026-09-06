@@ -3083,6 +3083,9 @@ function trainerComponent() {
                     const shardCacheGb = this._coerceFloat(dataset.shard_cache_gb);
                     const parallelDownloads = this._coerceInt(dataset.parallel_downloads);
                     const webshart = {};
+                    if (dataset.webshart?.caption_key !== undefined) {
+                        webshart.caption_key = this.sanitizeValueForSave(dataset.webshart.caption_key);
+                    }
                     if (cacheDir) {
                         webshart.cache_dir = cacheDir;
                     }

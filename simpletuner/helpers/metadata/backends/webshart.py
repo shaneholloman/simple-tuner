@@ -7,6 +7,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -63,6 +64,12 @@ class WebshartMetadataBackend(MetadataBackend):
         repeats: int = 0,
         max_num_samples: int = None,
     ):
+        if not isinstance(data_backend, WebshartDataBackend):
+            raise ValueError("WebshartMetadataBackend requires WebshartDataBackend")
+        if data_backend.caption_key is not None:
+            caption_digest = sha256(json.dumps(data_backend.caption_key).encode("utf-8")).hexdigest()[:16]
+            cache_file = f"{cache_file}_captions_{caption_digest}"
+            metadata_file = f"{metadata_file}_captions_{caption_digest}"
         super().__init__(
             id=id,
             instance_data_dir=instance_data_dir,
@@ -86,8 +93,6 @@ class WebshartMetadataBackend(MetadataBackend):
             repeats=repeats,
             max_num_samples=max_num_samples,
         )
-        if not isinstance(data_backend, WebshartDataBackend):
-            raise ValueError("WebshartMetadataBackend requires WebshartDataBackend")
         if self.dataset_type not in {DatasetType.IMAGE, DatasetType.VIDEO, DatasetType.CONDITIONING, DatasetType.EVAL}:
             raise ValueError("WebshartMetadataBackend supports image, video, conditioning, and eval datasets only.")
 
@@ -321,6 +326,8 @@ class WebshartMetadataBackend(MetadataBackend):
             metadata["original_size"] = (int(width), int(height))
         if "captions" in file_metadata:
             metadata["captions"] = file_metadata["captions"]
+        if self.data_backend.caption_key is not None:
+            metadata["captions"] = self.data_backend.get_caption(sample_path)
         json_metadata = file_metadata.get("json_metadata") or {}
         if json_metadata:
             metadata["json_metadata"] = json_metadata
@@ -526,7 +533,7 @@ class WebshartMetadataBackend(MetadataBackend):
                             # metadata (e.g. cc12m); get_caption() range-reads those at runtime.
                             # get_shard_metadata returns a flat mapping keyed by member filename.
                             caption_member = Path(str(entry["filename"])).with_suffix(".txt").name
-                            if caption_member not in shard_metadata:
+                            if self.data_backend.caption_key is not None or caption_member not in shard_metadata:
                                 statistics["skipped"]["caption_missing"] += 1
                                 continue
                         aspect_ratio_bucket_updates.setdefault(bucket_key, []).append(sample_path)
