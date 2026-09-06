@@ -11,6 +11,7 @@ import requests
 from PIL import Image
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
@@ -2032,6 +2033,90 @@ class DatasetBuilderViewModeTestCase(_TrainerPageMixin, WebUITestCase):
     """Test dataset builder view mode switching and new UI features."""
 
     MAX_BROWSERS = 1
+
+    def test_webshart_caption_keys_edit_and_save(self) -> None:
+        self.seed_defaults()
+        config_path = self.config_dir / "default" / "multidatabackend.json"
+        config_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "webshart-captions",
+                        "type": "webshart",
+                        "dataset_type": "image",
+                        "source": "org/dataset",
+                        "caption_strategy": "webshart",
+                        "metadata_backend": "webshart",
+                        "webshart": {"caption_key": "original"},
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        def scenario(driver, _browser):
+            trainer_page = self._trainer_page(driver)
+            datasets_tab = DatasetsTab(driver, base_url=self.base_url)
+            trainer_page.navigate_to_trainer()
+            self.dismiss_onboarding(driver)
+            trainer_page.switch_to_datasets_tab()
+            trainer_page.wait_for_tab("datasets")
+            driver.execute_script(
+                """
+                document.querySelector('#datasets-tab-content .hero-dismiss-btn').click();
+                const toggle = document.querySelector('[data-dataset-id="webshart-captions"] .list-item-toggle');
+                if (toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+            """
+            )
+
+            def select_tab(name):
+                driver.execute_script(
+                    """
+                    const item = document.querySelector('[data-dataset-id="webshart-captions"]').closest('.dataset-list-item-wrapper');
+                    [...item.querySelectorAll('button')].find(button => button.textContent.trim() === arguments[0]).click();
+                """,
+                    name,
+                )
+
+            select_tab("Storage")
+            selector = (By.CSS_SELECTOR, ".dataset-list-item-expanded .webshart-caption-keys")
+
+            def visible_field(d):
+                return next((element for element in d.find_elements(*selector) if element.is_displayed()), False)
+
+            field = WebDriverWait(driver, 10).until(visible_field)
+            self.assertEqual(field.get_attribute("value"), "original")
+            driver.execute_script("Alpine.store('trainer').hasUnsavedChanges = false;")
+
+            for value, expected in [
+                ("long_caption", "long_caption"),
+                ("long_caption\nshort_caption", ["long_caption", "short_caption"]),
+                ("", None),
+            ]:
+                with self.subTest(value=value):
+                    field.clear()
+                    field.send_keys(value, Keys.TAB)
+                    WebDriverWait(driver, 5).until(
+                        lambda d: d.execute_script("return Alpine.store('trainer').hasUnsavedChanges === true;")
+                    )
+                    saved = driver.execute_script(
+                        "return Alpine.store('trainer').prepareDatasetsForSave().find(d => d.id === 'webshart-captions');"
+                    )
+                    self.assertEqual(saved.get("webshart", {}).get("caption_key"), expected, saved)
+                    datasets_tab.save_datasets()
+                    persisted = next(
+                        d for d in json.loads(config_path.read_text(encoding="utf-8")) if d["id"] == "webshart-captions"
+                    )
+                    self.assertEqual(persisted.get("webshart", {}).get("caption_key"), expected)
+                    WebDriverWait(driver, 5).until(
+                        lambda d: d.execute_script("return Alpine.store('trainer').hasUnsavedChanges === false;")
+                    )
+                    select_tab("Basic")
+                    select_tab("Storage")
+                    field = WebDriverWait(driver, 10).until(visible_field)
+                    self.assertEqual(field.get_attribute("value"), value)
+
+        self.for_each_browser("test_webshart_caption_keys_edit_and_save", scenario)
 
     def test_view_mode_toggle(self) -> None:
         """Test switching between list and grid view modes."""
