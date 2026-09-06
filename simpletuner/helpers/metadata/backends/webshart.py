@@ -27,17 +27,6 @@ else:
     logger.setLevel("ERROR")
 
 
-def _coerce_bucket_keys_to_float(indices: dict) -> dict:
-    coerced = {}
-    for key, values in (indices or {}).items():
-        try:
-            coerced_key = float(key)
-        except (TypeError, ValueError):
-            coerced_key = key
-        coerced[coerced_key] = list(values) if not isinstance(values, list) else values
-    return coerced
-
-
 class WebshartMetadataBackend(MetadataBackend):
     def __init__(
         self,
@@ -162,9 +151,7 @@ class WebshartMetadataBackend(MetadataBackend):
             except Exception as exc:
                 logger.warning("Error loading webshart aspect bucket cache, creating new one: %s", exc)
                 cache_data = {}
-            self.aspect_ratio_bucket_indices = _coerce_bucket_keys_to_float(
-                cache_data.get("aspect_ratio_bucket_indices", {})
-            )
+            self.aspect_ratio_bucket_indices = cache_data.get("aspect_ratio_bucket_indices", {})
             self._sync_image_files_with_buckets()
             if set_config:
                 self.config = cache_data.get("config", {})
@@ -354,7 +341,7 @@ class WebshartMetadataBackend(MetadataBackend):
         shard_metadata: dict,
         entry: dict,
         sample_path: str,
-    ) -> tuple[dict, Optional[tuple[float, dict]], Optional[Exception]]:
+    ) -> tuple[dict, Optional[tuple[str, dict]], Optional[Exception]]:
         try:
             filename = str(entry["filename"])
             sample_metadata = self._metadata_for_entry(shard_metadata, filename, entry, sample_path)
@@ -362,7 +349,7 @@ class WebshartMetadataBackend(MetadataBackend):
         except Exception as exc:
             return {}, None, exc
 
-    def _prepare_metadata(self, sample_path: str, sample_metadata: dict) -> Optional[tuple[float, dict]]:
+    def _prepare_metadata(self, sample_path: str, sample_metadata: dict) -> Optional[tuple[str, dict]]:
         if not sample_metadata or "original_size" not in sample_metadata:
             return None
         if not self.meets_resolution_requirements(image_metadata=sample_metadata):
@@ -392,7 +379,7 @@ class WebshartMetadataBackend(MetadataBackend):
             )
             sample_metadata["bucket_frames"] = rounded_frames
         else:
-            bucket_key = round(aspect_ratio, 2)
+            bucket_key = str(round(aspect_ratio, 2))
         return bucket_key, sample_metadata
 
     def _entries_for_shard(self, shard_idx: int) -> list[dict]:

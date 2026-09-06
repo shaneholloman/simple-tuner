@@ -549,6 +549,51 @@ class TestSamplerResumeSchedule(unittest.TestCase):
         filename = "training_state.json" if rank == 0 else f"training_state-rank{rank}.json"
         return os.path.join(directory, filename)
 
+    def test_resume_normalizes_numeric_bucket_names_and_preserves_remaining_occurrences(self):
+        backend = DiscoveryMetadataBackend.__new__(DiscoveryMetadataBackend)
+        backend.id = "resume"
+        backend.instance_data_dir = ""
+        backend.accelerator = SimpleNamespace(num_processes=1, process_index=0)
+        backend.aspect_ratio_bucket_indices = {"1.0": ["fresh.jpg"]}
+        backend.seen_images = {}
+        sampler = self._sampler(backend)
+        sampler.rank_info = "[RANK 0]"
+        saved_schedule = {
+            "1.0": ["repeat.jpg", "repeat.jpg", "other.jpg"],
+            "1.5": ["wide.jpg"],
+            "1920x1080@125": ["video.mp4"],
+        }
+        with tempfile.TemporaryDirectory() as checkpoint_dir:
+            state_path = self._state_path(checkpoint_dir, 0)
+            sampler.state_manager.save_state(
+                {
+                    "aspect_ratio_bucket_indices": saved_schedule,
+                    "buckets": [1.0, "1920x1080@125"],
+                    "exhausted_buckets": [1.5],
+                    "current_bucket": 0,
+                    "batch_size": 1,
+                    "seen_images": {"repeat.jpg": 1, "wide.jpg": 1},
+                    "dp_size": 1,
+                    "dp_rank": 0,
+                },
+                state_path,
+            )
+            sampler.load_states(state_path)
+            self.assertEqual(sampler.buckets, ["1.0", "1920x1080@125"])
+            self.assertEqual(sampler.exhausted_buckets, ["1.5"])
+            self.assertEqual(sampler.current_bucket, 0)
+            self.assertEqual(backend.aspect_ratio_bucket_indices, saved_schedule)
+            self.assertEqual(sampler._get_unseen_images("1.0"), ["repeat.jpg", "other.jpg"])
+            backend.mark_batch_as_seen(["repeat.jpg", "other.jpg"])
+            self.assertEqual(sampler._get_unseen_images("1.0"), [])
+
+            sampler.save_state(state_path)
+            sampler.load_states(state_path)
+            self.assertEqual(backend.aspect_ratio_bucket_indices, saved_schedule)
+            self.assertEqual(sampler._get_unseen_images("1.0"), [])
+            self.assertEqual(sampler._get_unseen_images("1920x1080@125"), ["video.mp4"])
+        sampler.logger.warning.assert_not_called()
+
     def _resume_shards(self, *, images, save_world_size, saving_ranks, resume_world_size):
         with tempfile.TemporaryDirectory() as checkpoint_dir:
             for rank in range(save_world_size):
