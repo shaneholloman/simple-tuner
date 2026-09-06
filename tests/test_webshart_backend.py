@@ -186,6 +186,26 @@ class TestWebshartDataBackend(unittest.TestCase):
         with self.assertRaisesRegex(ImportError, "list_shard_sample_aspect_buckets_filtered"):
             backend.list_shard_sample_aspect_buckets([0], dataset_filter=dataset_filter)
 
+    @patch("simpletuner.helpers.metadata.backends.webshart.TrainingSample")
+    def test_prepared_image_bucket_matches_cached_string_key(self, training_sample):
+        backend = WebshartMetadataBackend.__new__(WebshartMetadataBackend)
+        backend.id = "test-backend"
+        backend.dataset_type = DatasetType.IMAGE
+        backend.meets_resolution_requirements = Mock(return_value=True)
+        backend.aspect_ratio_bucket_indices = {"1.0": ["cached.webp"]}
+        training_sample.return_value.prepare.return_value = SimpleNamespace(
+            aspect_ratio=1.0,
+            intermediary_size=(512, 512),
+            crop_coordinates=(0, 0),
+            target_size=(512, 512),
+        )
+
+        key, metadata = backend._prepare_metadata("new.webp", {"original_size": (1024, 1024)})
+        backend.aspect_ratio_bucket_indices.setdefault(key, []).append("new.webp")
+
+        self.assertEqual(backend.aspect_ratio_bucket_indices, {"1.0": ["cached.webp", "new.webp"]})
+        self.assertEqual(metadata["aspect_ratio"], 1.0)
+
     def test_video_metadata_uses_indexed_frame_fields_and_probe_geometry(self):
         backend = WebshartMetadataBackend.__new__(WebshartMetadataBackend)
         backend.data_backend = Mock(caption_key=None)
