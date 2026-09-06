@@ -860,7 +860,7 @@ class MultiAspectSampler(torch.utils.data.Sampler):
             for sample in samples:
                 sample_path: str = sample["image_path"]
                 if self.metadata_backend.instance_data_dir is not None and self.metadata_backend.instance_data_dir != "":
-                    sample_path = sample_path.split(self.metadata_backend.instance_data_dir)[-1]
+                    sample_path = sample_path.split(self.metadata_backend.instance_data_dir)[-1].lstrip("/")
 
                 # Deterministic selection based on hash of image path and current epoch
                 # This ensures the same image gets the same conditioning dataset within an epoch
@@ -916,7 +916,7 @@ class MultiAspectSampler(torch.utils.data.Sampler):
                 for sample in samples:
                     sample_path: str = sample["image_path"]
                     if self.metadata_backend.instance_data_dir is not None and self.metadata_backend.instance_data_dir != "":
-                        sample_path = sample_path.split(self.metadata_backend.instance_data_dir)[-1]
+                        sample_path = sample_path.split(self.metadata_backend.instance_data_dir)[-1].lstrip("/")
 
                     conditioning_sample = sampler.get_conditioning_sample(sample_path)
                     if conditioning_sample is not None:
